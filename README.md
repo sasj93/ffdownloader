@@ -1,8 +1,5 @@
 # FFDOWNLOADER
 
-[![CI](https://github.com/sasj93/ffdownloader/actions/workflows/ci.yml/badge.svg)](https://github.com/sasj93/ffdownloader/actions/workflows/ci.yml)
-[![Release](https://github.com/sasj93/ffdownloader/actions/workflows/release.yml/badge.svg)](https://github.com/sasj93/ffdownloader/actions/workflows/release.yml)
-
 FFDOWNLOADER is a portable Windows download manager built with .NET 8 and WPF. It monitors the clipboard, captures supported file-host links, groups multipart archives automatically, resolves final download URLs, and downloads files with resumable multi-connection transfers.
 
 > Use FFDOWNLOADER only for files you are authorized to download. Host support is implemented as plugins/adapters and may need maintenance when a website changes its markup or protection flow.
