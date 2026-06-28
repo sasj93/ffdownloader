@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version without v prefix"
+        required: true
+        default: "1.0.0"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build release package
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            "value=${{ github.event.inputs.version }}" >> $env:GITHUB_OUTPUT
+          } else {
+            "value=$('${{ github.ref_name }}'.TrimStart('v'))" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Test
+        run: dotnet test tests\FFDownloader.Core.Tests\FFDownloader.Core.Tests.csproj --configuration Release
+
+      - name: Package
+        shell: pwsh
+        run: .\scripts\package-release.ps1 -Version "${{ steps.version.outputs.value }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FFDOWNLOADER-win-x64
+          path: artifacts/release/*.zip
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/release/*.zip
+          generate_release_notes: true
+

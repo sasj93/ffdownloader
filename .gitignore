@@ -1,0 +1,39 @@
+# Build output
+**/bin/
+**/obj/
+dist/
+artifacts/
+
+# Local toolchains and generated state
+.dotnet/
+.tools/
+.superpowers/
+docs/superpowers/
+tmp/
+
+# Runtime data
+data/
+*.ffdownload
+*.ffdownload.*
+*.seg*
+*.state
+*.log
+*.pid
+*.WebView2/
+FFDOWNLOADER.exe.WebView2/
+
+# IDE / OS
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+Thumbs.db
+Desktop.ini
+
+# Test and coverage output
+TestResults/
+coverage/
+*.coverage
+*.trx
