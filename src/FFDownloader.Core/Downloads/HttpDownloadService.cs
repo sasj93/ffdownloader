@@ -190,8 +190,9 @@ public sealed class HttpDownloadService
 
         var limiter = new DownloadSpeedLimiter(() => settings.SpeedLimitBytesPerSecond);
         var speedWindow = new SpeedWindow();
+        var lastSegmentIndex = segments.Max(segment => segment.Index);
 
-        var firstResult = await DownloadSegmentAsync(item, paths, segments[0], resolved.DownloadUrl, state, settings, limiter, speedWindow, progress, cancellationToken);
+        var firstResult = await DownloadSegmentAsync(item, paths, segments[0], resolved.DownloadUrl, state, settings, limiter, speedWindow, segments[0].Index == lastSegmentIndex, progress, cancellationToken);
         if (firstResult == SegmentDownloadResult.RangeNotSupported)
         {
             DeletePartial(paths);
@@ -200,7 +201,7 @@ public sealed class HttpDownloadService
 
         var remainingTasks = segments
             .Skip(1)
-            .Select(segment => DownloadSegmentAsync(item, paths, segment, resolved.DownloadUrl, state, settings, limiter, speedWindow, progress, cancellationToken))
+            .Select(segment => DownloadSegmentAsync(item, paths, segment, resolved.DownloadUrl, state, settings, limiter, speedWindow, segment.Index == lastSegmentIndex, progress, cancellationToken))
             .ToArray();
 
         var results = await Task.WhenAll(remainingTasks);
@@ -210,9 +211,10 @@ public sealed class HttpDownloadService
             return await DownloadSingleStreamAsync(item, resolved, paths, settings, progress, cancellationToken);
         }
 
+        var confirmedTotal = state.ConfirmedTotalBytes ?? totalBytes;
         await MergeSegmentsAsync(paths.TempPath, segments, cancellationToken);
-        ValidateFinalSize(totalBytes, GetExistingBytes(paths.TempPath));
-        return CompleteDownload(item, paths, totalBytes, progress);
+        ValidateFinalSize(confirmedTotal, GetExistingBytes(paths.TempPath));
+        return CompleteDownload(item, paths, confirmedTotal, progress);
     }
 
     private async Task<SegmentDownloadResult> DownloadSegmentAsync(
@@ -224,28 +226,51 @@ public sealed class HttpDownloadService
         DownloadSettings settings,
         DownloadSpeedLimiter limiter,
         SpeedWindow speedWindow,
+        bool isLastSegment,
         IProgress<DownloadProgress>? progress,
         CancellationToken cancellationToken)
     {
         var existingBytes = GetExistingBytes(segment.Path);
-        var segmentLength = segment.End - segment.Start + 1;
-        if (existingBytes >= segmentLength)
-        {
-            RefreshSegmentProgress(item, state, progress);
-            return SegmentDownloadResult.Completed;
-        }
 
-        if (existingBytes < 0 || existingBytes > segmentLength)
+        // Last segment's real length is unknown until the server confirms it, so its estimated
+        // End is an open-ended request rather than a hard boundary.
+        var confirmedSegmentLength = isLastSegment
+            ? state.ConfirmedTotalBytes - segment.Start
+            : segment.End - segment.Start + 1;
+
+        if (confirmedSegmentLength.HasValue)
+        {
+            if (existingBytes >= confirmedSegmentLength.Value)
+            {
+                RefreshSegmentProgress(item, state, progress);
+                return SegmentDownloadResult.Completed;
+            }
+
+            if (existingBytes < 0 || existingBytes > confirmedSegmentLength.Value)
+            {
+                File.Delete(segment.Path);
+                existingBytes = 0;
+            }
+        }
+        else if (existingBytes < 0)
         {
             File.Delete(segment.Path);
             existingBytes = 0;
         }
 
         var from = segment.Start + existingBytes;
-        using var response = await SendDownloadRequestAsync(downloadUrl, from, segment.End, cancellationToken);
+        var to = isLastSegment ? null : (long?)segment.End;
+        using var response = await SendDownloadRequestAsync(downloadUrl, from, to, cancellationToken);
         if (response.StatusCode == HttpStatusCode.OK)
         {
             return SegmentDownloadResult.RangeNotSupported;
+        }
+
+        if (response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable && isLastSegment)
+        {
+            UpdateConfirmedTotalBytes(state, response);
+            RefreshSegmentProgress(item, state, progress);
+            return SegmentDownloadResult.Completed;
         }
 
         response.EnsureSuccessStatusCode();
@@ -256,6 +281,7 @@ public sealed class HttpDownloadService
 
         ValidateRemoteIdentity(paths, state, response, settings);
         UpdateStateIdentity(state, response);
+        UpdateConfirmedTotalBytes(state, response);
         SaveResumeState(paths, state);
 
         await using var input = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -365,7 +391,7 @@ public sealed class HttpDownloadService
         });
 
         item.DownloadedBytes = downloaded;
-        item.SizeBytes = state.TotalBytes;
+        item.SizeBytes = state.ConfirmedTotalBytes ?? state.TotalBytes;
         progress?.Report(CreateProgress(item));
     }
 
@@ -495,6 +521,15 @@ public sealed class HttpDownloadService
     {
         state.ETag ??= response.Headers.ETag?.Tag;
         state.LastModified ??= response.Content.Headers.LastModified;
+    }
+
+    private static void UpdateConfirmedTotalBytes(ResumeState state, HttpResponseMessage response)
+    {
+        var confirmed = response.Content.Headers.ContentRange?.Length;
+        if (confirmed is > 0)
+        {
+            state.ConfirmedTotalBytes = confirmed;
+        }
     }
 
     private ResumeState CreateSingleSegmentState(ResolvedDownload resolved, long? totalBytes, HttpResponseMessage response)
@@ -646,6 +681,10 @@ public sealed class HttpDownloadService
         public string? ETag { get; set; } = ETag;
 
         public DateTimeOffset? LastModified { get; set; } = LastModified;
+
+        // Server-confirmed size from a Content-Range response; TotalBytes stays the (often rounded)
+        // advertised estimate used for segment planning so resume-compatibility checks stay stable.
+        public long? ConfirmedTotalBytes { get; set; }
     }
 
     private enum SegmentDownloadResult

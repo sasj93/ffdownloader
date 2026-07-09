@@ -113,16 +113,16 @@ public sealed class HttpDownloadServiceTests
     {
         using var temp = new TempDirectory();
         var bytes = Enumerable.Range(0, 12).Select(value => (byte)value).ToArray();
-        var observedRanges = new List<(long From, long To)>();
+        var observedRanges = new List<(long From, long? To)>();
         var handler = new StubHttpMessageHandler(request =>
         {
             request.Headers.Range.Should().NotBeNull();
             var range = request.Headers.Range!.Ranges.Single();
             var from = range.From!.Value;
-            var to = range.To!.Value;
+            var to = range.To ?? bytes.Length - 1;
             lock (observedRanges)
             {
-                observedRanges.Add((from, to));
+                observedRanges.Add((from, range.To));
             }
 
             var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
@@ -152,8 +152,86 @@ public sealed class HttpDownloadServiceTests
             CancellationToken.None);
 
         File.ReadAllBytes(result.LocalPath).Should().Equal(bytes);
-        observedRanges.OrderBy(range => range.From).Should().Equal([(0, 3), (4, 7), (8, 11)]);
+        observedRanges.OrderBy(range => range.From).Should().Equal([(0, 3), (4, 7), (8, null)]);
         File.Exists(System.IO.Path.Combine(temp.Path, "File.bin.ffdownload.state")).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task DownloadAsync_completes_when_advertised_size_overshoots_the_real_server_size()
+    {
+        using var temp = new TempDirectory();
+        var bytes = Enumerable.Range(0, 12).Select(value => (byte)value).ToArray();
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            var range = request.Headers.Range!.Ranges.Single();
+            var from = (int)range.From!.Value;
+            var to = range.To.HasValue ? Math.Min((int)range.To.Value, bytes.Length - 1) : bytes.Length - 1;
+            var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
+            {
+                Content = new ByteArrayContent(bytes[from..(to + 1)])
+            };
+            response.Content.Headers.ContentRange = new ContentRangeHeaderValue(from, to, bytes.Length);
+            return response;
+        });
+        var service = new HttpDownloadService(new HttpClient(handler));
+        var link = new LinkCandidate("https://fuckingfast.co/file#File.bin", "fuckingfast.co", "File.bin", "File.bin", null, false);
+        var item = new DownloadItem(link);
+        var settings = DownloadSettings.CreateDefault();
+        settings.DestinationFolder = temp.Path;
+        settings.ConnectionsPerFile = 3;
+        settings.EnableMultiConnectionDownloads = true;
+        settings.EnableAdaptiveConnectionCount = false;
+
+        var result = await service.DownloadAsync(
+            item,
+            new ResolvedDownload("https://cdn.example.test/File.bin", "File.bin", bytes.Length + 3),
+            temp.Path,
+            settings,
+            null,
+            CancellationToken.None);
+
+        File.ReadAllBytes(result.LocalPath).Should().Equal(bytes);
+        item.Status.Should().Be(DownloadStatus.Completed);
+        item.SizeBytes.Should().Be(bytes.Length);
+    }
+
+    [Fact]
+    public async Task DownloadAsync_downloads_full_file_when_advertised_size_undershoots_the_real_server_size()
+    {
+        using var temp = new TempDirectory();
+        var bytes = Enumerable.Range(0, 14).Select(value => (byte)value).ToArray();
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            var range = request.Headers.Range!.Ranges.Single();
+            var from = (int)range.From!.Value;
+            var to = range.To.HasValue ? Math.Min((int)range.To.Value, bytes.Length - 1) : bytes.Length - 1;
+            var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
+            {
+                Content = new ByteArrayContent(bytes[from..(to + 1)])
+            };
+            response.Content.Headers.ContentRange = new ContentRangeHeaderValue(from, to, bytes.Length);
+            return response;
+        });
+        var service = new HttpDownloadService(new HttpClient(handler));
+        var link = new LinkCandidate("https://fuckingfast.co/file#File.bin", "fuckingfast.co", "File.bin", "File.bin", null, false);
+        var item = new DownloadItem(link);
+        var settings = DownloadSettings.CreateDefault();
+        settings.DestinationFolder = temp.Path;
+        settings.ConnectionsPerFile = 3;
+        settings.EnableMultiConnectionDownloads = true;
+        settings.EnableAdaptiveConnectionCount = false;
+
+        var result = await service.DownloadAsync(
+            item,
+            new ResolvedDownload("https://cdn.example.test/File.bin", "File.bin", 12),
+            temp.Path,
+            settings,
+            null,
+            CancellationToken.None);
+
+        File.ReadAllBytes(result.LocalPath).Should().Equal(bytes);
+        item.Status.Should().Be(DownloadStatus.Completed);
+        item.SizeBytes.Should().Be(bytes.Length);
     }
 
     [Fact]
@@ -213,7 +291,7 @@ public sealed class HttpDownloadServiceTests
             }
 
             var from = range.From!.Value;
-            var to = range.To!.Value;
+            var to = range.To ?? bytes.Length - 1;
             var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
             {
                 Content = new ByteArrayContent(bytes[(int)from..((int)to + 1)])

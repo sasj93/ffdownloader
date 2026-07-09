@@ -14,6 +14,8 @@ public sealed class AppSettingsStore
 
     public string SettingsPath => Path.Combine(DataFolder, "settings.json");
 
+    public string TorrentSettingsPath => Path.Combine(DataFolder, "torrent-settings.json");
+
     public DownloadSettings Load()
     {
         try
@@ -39,5 +41,32 @@ public sealed class AppSettingsStore
         settings.Validate();
         Directory.CreateDirectory(DataFolder);
         File.WriteAllText(SettingsPath, JsonSerializer.Serialize(settings, _jsonOptions));
+    }
+
+    public TorrentClientSettings LoadTorrentSettings()
+    {
+        try
+        {
+            if (!File.Exists(TorrentSettingsPath))
+            {
+                return TorrentClientSettings.CreateDefault();
+            }
+
+            var json = File.ReadAllText(TorrentSettingsPath);
+            var settings = JsonSerializer.Deserialize<TorrentClientSettings>(json, _jsonOptions) ?? TorrentClientSettings.CreateDefault();
+            settings.Validate();
+            return settings;
+        }
+        catch
+        {
+            return TorrentClientSettings.CreateDefault();
+        }
+    }
+
+    public void SaveTorrentSettings(TorrentClientSettings settings)
+    {
+        settings.Validate();
+        Directory.CreateDirectory(DataFolder);
+        File.WriteAllText(TorrentSettingsPath, JsonSerializer.Serialize(settings, _jsonOptions));
     }
 }

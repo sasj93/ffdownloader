@@ -25,8 +25,8 @@ public sealed class WindowDialogService
     {
         return MessageBox.Show(
             _owner,
-            $"Encontramos {linkCount} link(s) do FuckingFast no clipboard. Adicionar ao FFDOWNLOADER?",
-            "Adicionar links",
+            $"Found {linkCount} compatible link(s) in the clipboard. Add them to FFDOWNLOADER?",
+            "Add links",
             MessageBoxButton.YesNo,
             MessageBoxImage.Question) == MessageBoxResult.Yes;
     }
@@ -45,7 +45,7 @@ public sealed class WindowDialogService
     {
         var dialog = new Microsoft.Win32.OpenFolderDialog
         {
-            Title = "Selecionar pasta"
+            Title = "Select folder"
         };
 
         if (!string.IsNullOrWhiteSpace(initialPath) && Directory.Exists(initialPath))
@@ -64,5 +64,17 @@ public sealed class WindowDialogService
             FileName = path,
             UseShellExecute = true
         });
+    }
+
+    public string? BrowseTorrentFile()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Select .torrent file",
+            Filter = "Torrent files (*.torrent)|*.torrent|All files (*.*)|*.*",
+            CheckFileExists = true
+        };
+
+        return dialog.ShowDialog(_owner) == true ? dialog.FileName : null;
     }
 }

@@ -25,13 +25,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly DownloadSettings _settings;
     private CancellationTokenSource? _downloadCts;
     private PackageViewModel? _selectedPackage;
-    private string _statusMessage = "Pronto";
+    private string _statusMessage = "Ready";
     private bool _isDownloading;
     private bool _isDisposed;
     private DateTimeOffset _lastQueueSave = DateTimeOffset.MinValue;
-    private readonly object _gateLock = new();
-    private SemaphoreSlim? _downloadGate;
-    private int _downloadGateSize;
+    private readonly ResizableSemaphore _downloadGate;
 
     public MainViewModel(WindowDialogService dialogs)
     {
@@ -39,12 +37,22 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _settingsStore = new AppSettingsStore();
         _settings = _settingsStore.Load();
         _settings.Validate();
-        _resolverRegistry = new ResolverRegistry([new AutomaticFuckingFastResolver()]);
+        Torrents = new TorrentsViewModel(dialogs, _settingsStore);
+        var directResolvers = new IHostResolver[]
+        {
+            new AutomaticFuckingFastResolver(),
+            new AutomaticDatanodesResolver(),
+            new AutomaticMediaFireResolver(),
+            new GenericBrowserMirrorResolver()
+        };
+        var multiUpResolver = new MultiUpResolver(new ResolverRegistry(directResolvers));
+        _resolverRegistry = new ResolverRegistry([.. directResolvers, multiUpResolver]);
         _downloadService = new HttpDownloadService();
         _queueStore = new DownloadQueueStore();
         _archiveExtractor = new ArchiveExtractor();
         _clipboardMonitor = new ClipboardMonitor();
         _clipboardMonitor.LinksDetected += ClipboardMonitor_LinksDetected;
+        _downloadGate = new ResizableSemaphore(_settings.MaxConcurrentDownloads);
 
         _queue.ReplacePackages(_queueStore.Load(QueueStatePath));
         Packages = new ObservableCollection<PackageViewModel>(_queue.Packages.Select(package => new PackageViewModel(package)));
@@ -69,6 +77,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     }
 
     public ObservableCollection<PackageViewModel> Packages { get; }
+
+    public TorrentsViewModel Torrents { get; }
 
     public PackageViewModel? SelectedPackage
     {
@@ -153,7 +163,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     public string TransferSummaryText => $"{FormatBytes(TotalDownloadedBytes)} / {(TotalSizeBytes.HasValue ? FormatBytes(TotalSizeBytes.Value) : "-")}";
 
-    public string ActiveDownloadsText => IsDownloading ? $"{ActiveDownloads} ativo(s)" : "Parado";
+    public string ActiveDownloadsText => IsDownloading ? $"{ActiveDownloads} active" : "Stopped";
 
     public string QueueStatusText
     {
@@ -161,25 +171,25 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             if (TotalFiles == 0)
             {
-                return "Aguardando links";
+                return "Waiting for links";
             }
 
             if (IsDownloading)
             {
-                return $"{ActiveDownloads} ativo(s), {QueuedFiles} na fila";
+                return $"{ActiveDownloads} active, {QueuedFiles} queued";
             }
 
             if (FailedFiles > 0)
             {
-                return $"{FailedFiles} arquivo(s) com erro";
+                return $"{FailedFiles} file(s) failed";
             }
 
             if (CompletedFiles == TotalFiles)
             {
-                return "Tudo concluido";
+                return "All completed";
             }
 
-            return $"{QueuedFiles} arquivo(s) prontos";
+            return $"{QueuedFiles} file(s) ready";
         }
     }
 
@@ -261,7 +271,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     public string SpeedLimitSummaryText => SpeedLimitKilobytesPerSecond > 0
         ? $"{SpeedLimitKilobytesPerSecond} KB/s"
-        : "Sem limite";
+        : "No limit";
 
     public long MinMultiConnectionSizeMegabytes
     {
@@ -451,6 +461,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         SaveQueueState();
         _downloadCts?.Dispose();
         _clipboardMonitor.Dispose();
+        Torrents.Dispose();
         _isDisposed = true;
     }
 
@@ -478,7 +489,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         var links = DownloadLinkParser.ParseMany(text);
         if (links.Count == 0)
         {
-            _dialogs.ShowInfo("Nenhum link do FuckingFast foi encontrado.");
+            _dialogs.ShowInfo("No compatible link was found (FuckingFast, Datanodes, MediaFire, MultiUp, or a supported mirror host).");
             return;
         }
 
@@ -506,7 +517,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
 
         RefreshAllPackages();
-        StatusMessage = $"{links.Count} link(s) adicionados.";
+        StatusMessage = $"{links.Count} link(s) added.";
         SaveQueueState();
         StartCommand.RaiseCanExecuteChanged();
     }
@@ -530,15 +541,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _downloadCts = new CancellationTokenSource();
         var token = _downloadCts.Token;
         IsDownloading = true;
-        StatusMessage = "Baixando...";
+        StatusMessage = "Downloading...";
 
         try
         {
-            using var semaphore = new SemaphoreSlim(MaxConcurrentDownloads);
             var jobs = Packages
                 .SelectMany(package => package.Items.Select(item => new { Package = package, Item = item }))
                 .Where(entry => entry.Item.Status is DownloadStatus.Queued or DownloadStatus.Failed or DownloadStatus.Paused)
-                .Select(entry => RunItemAsync(entry.Package, entry.Item, semaphore, token))
+                .Select(entry => RunItemAsync(entry.Package, entry.Item, token))
                 .ToList();
 
             await Task.WhenAll(jobs);
@@ -549,7 +559,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             }
 
             SaveQueueState();
-            StatusMessage = "Fila finalizada.";
+            StatusMessage = "Queue finished.";
         }
         catch (OperationCanceledException)
         {
@@ -566,7 +576,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private void PauseDownloads()
     {
         _downloadCts?.Cancel();
-        StatusMessage = "Pausando...";
+        StatusMessage = "Pausing...";
         SaveQueueState();
     }
 
@@ -655,9 +665,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         StartCommand.RaiseCanExecuteChanged();
     }
 
-    private async Task RunItemAsync(PackageViewModel package, DownloadItemViewModel item, SemaphoreSlim semaphore, CancellationToken token)
+    private async Task RunItemAsync(PackageViewModel package, DownloadItemViewModel item, CancellationToken token)
     {
-        await semaphore.WaitAsync(token);
+        await _downloadGate.WaitAsync(token);
         try
         {
             item.Status = DownloadStatus.Resolving;
@@ -666,7 +676,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             var resolver = _resolverRegistry.FindResolver(item.Model.Link);
             if (resolver is null)
             {
-                throw new InvalidOperationException($"Host nao suportado: {item.Host}");
+                throw new InvalidOperationException($"Unsupported host: {item.Host}");
             }
 
             var destination = GetPackageDestination(package);
@@ -703,7 +713,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             package.RefreshComputed();
             RefreshDashboard();
-            semaphore.Release();
+            _downloadGate.Release();
         }
     }
 
@@ -739,8 +749,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 last = ex;
                 item.Status = DownloadStatus.Resolving;
                 item.ErrorMessage = ShouldRenewLink(ex)
-                    ? "URL expirada; renovando link..."
-                    : "Falha temporaria; tentando novamente...";
+                    ? "URL expired; renewing link..."
+                    : "Temporary failure; retrying...";
                 item.ResolvedUrl = ShouldRenewLink(ex) ? null : item.ResolvedUrl;
                 progress.Report(new DownloadProgress(item.Id, item.DownloadedBytes, item.SizeBytes, item.SpeedBytesPerSecond, item.Status));
                 SaveQueueState();
@@ -753,7 +763,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             }
         }
 
-        throw last ?? new InvalidOperationException("Nao foi possivel baixar o arquivo.");
+        throw last ?? new InvalidOperationException("Could not download the file.");
     }
 
     private bool ShouldRetryDownload(Exception exception)
@@ -803,7 +813,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             }
         }
 
-        throw last ?? new InvalidOperationException("Nao foi possivel resolver o link.");
+        throw last ?? new InvalidOperationException("Could not resolve the link.");
     }
 
     private async Task ExtractPackageIfNeededAsync(PackageViewModel package, CancellationToken token)
@@ -836,12 +846,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             {
                 item.Status = DownloadStatus.Extracted;
             }
-            StatusMessage = $"Extraido: {package.Name}";
+            StatusMessage = $"Extracted: {package.Name}";
         }
         catch (Exception ex)
         {
             archiveItem.Status = DownloadStatus.Failed;
-            archiveItem.ErrorMessage = $"Extracao falhou: {ex.Message}";
+            archiveItem.ErrorMessage = $"Extraction failed: {ex.Message}";
         }
         finally
         {
@@ -885,7 +895,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         try
         {
             _settingsStore.Save(_settings);
-            StatusMessage = "Configuracoes salvas.";
+            StatusMessage = "Settings saved.";
         }
         catch (Exception ex)
         {
@@ -907,17 +917,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private void AdjustDownloadGate(int size)
     {
-        lock (_gateLock)
-        {
-            if (_downloadGateSize == size)
-            {
-                return;
-            }
-
-            _downloadGate?.Dispose();
-            _downloadGate = new SemaphoreSlim(size);
-            _downloadGateSize = size;
-        }
+        _downloadGate.Resize(size);
     }
 
     private void RefreshAllPackages()
@@ -948,6 +948,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(TransferSummaryText));
         OnPropertyChanged(nameof(ActiveDownloadsText));
         OnPropertyChanged(nameof(QueueStatusText));
+        RetryFailedCommand.RaiseCanExecuteChanged();
     }
 
     private static string SanitizeFolderName(string name)
@@ -972,5 +973,53 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
 
         return $"{value:0.##} {units[unit]}";
+    }
+
+    private sealed class ResizableSemaphore
+    {
+        private readonly object _lock = new();
+        private readonly SemaphoreSlim _semaphore = new(0, int.MaxValue);
+        private int _limit;
+        private int _pendingShrink;
+
+        public ResizableSemaphore(int initialLimit)
+        {
+            _limit = Math.Max(1, initialLimit);
+            _semaphore.Release(_limit);
+        }
+
+        public Task WaitAsync(CancellationToken token) => _semaphore.WaitAsync(token);
+
+        public void Release()
+        {
+            lock (_lock)
+            {
+                if (_pendingShrink > 0)
+                {
+                    _pendingShrink--;
+                    return;
+                }
+            }
+
+            _semaphore.Release();
+        }
+
+        public void Resize(int newLimit)
+        {
+            newLimit = Math.Max(1, newLimit);
+            lock (_lock)
+            {
+                var diff = newLimit - _limit;
+                _limit = newLimit;
+                if (diff > 0)
+                {
+                    _semaphore.Release(diff);
+                }
+                else if (diff < 0)
+                {
+                    _pendingShrink += -diff;
+                }
+            }
+        }
     }
 }

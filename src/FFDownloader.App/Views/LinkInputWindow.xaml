@@ -24,7 +24,7 @@
             <DockPanel>
                 <StackPanel>
                     <TextBlock Text="Analyze and Add Links" Style="{StaticResource SectionTitleText}" />
-                    <TextBlock Text="Paste URLs, mixed text, Markdown lists, or FuckingFast links without protocol."
+                    <TextBlock Text="Paste URLs, mixed text, Markdown lists, or FuckingFast/Datanodes/MediaFire links without protocol."
                                Style="{StaticResource MutedText}"
                                Margin="0,2,0,0" />
                 </StackPanel>

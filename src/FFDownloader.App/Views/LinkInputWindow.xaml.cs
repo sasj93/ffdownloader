@@ -33,7 +33,7 @@ public partial class LinkInputWindow : Window
         }
         catch
         {
-            MessageBox.Show(this, "Nao foi possivel ler o clipboard.", "Adicionar links", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, "Could not read the clipboard.", "Add links", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
@@ -45,6 +45,6 @@ public partial class LinkInputWindow : Window
     private void UpdateDetectedCount()
     {
         var links = DownloadLinkParser.ParseMany(LinksBox.Text);
-        DetectedCountText.Text = $"{links.Count} link(s) detectado(s)";
+        DetectedCountText.Text = $"{links.Count} link(s) detected";
     }
 }
