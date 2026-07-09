@@ -7,6 +7,7 @@ public sealed class PackageViewModel : ObservableObject
 {
     private string? _password;
     private bool _autoExtract;
+    private bool _isExpanded;
 
     public PackageViewModel(DownloadPackageJob model)
     {
@@ -57,6 +58,12 @@ public sealed class PackageViewModel : ObservableObject
                 Model.AutoExtract = value;
             }
         }
+    }
+
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set => SetProperty(ref _isExpanded, value);
     }
 
     public ObservableCollection<DownloadItemViewModel> Items { get; }

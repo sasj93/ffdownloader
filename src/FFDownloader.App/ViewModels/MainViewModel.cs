@@ -29,6 +29,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private bool _isDownloading;
     private bool _isDisposed;
     private DateTimeOffset _lastQueueSave = DateTimeOffset.MinValue;
+    private readonly object _gateLock = new();
+    private SemaphoreSlim? _downloadGate;
+    private int _downloadGateSize;
 
     public MainViewModel(WindowDialogService dialogs)
     {
@@ -45,7 +48,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         _queue.ReplacePackages(_queueStore.Load(QueueStatePath));
         Packages = new ObservableCollection<PackageViewModel>(_queue.Packages.Select(package => new PackageViewModel(package)));
-        SelectedPackage = Packages.FirstOrDefault();
         AddLinksCommand = new RelayCommand(AddLinksFromDialog);
         StartCommand = new AsyncRelayCommand(StartDownloadsAsync, () => !IsDownloading && Packages.Any(package => package.Items.Any(item => item.Status is DownloadStatus.Queued or DownloadStatus.Failed or DownloadStatus.Paused)));
         PauseCommand = new RelayCommand(PauseDownloads, () => IsDownloading);
@@ -53,6 +55,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         OpenDestinationCommand = new RelayCommand(() => _dialogs.OpenFolder(DestinationFolder));
         SaveSettingsCommand = new RelayCommand(SaveSettings);
         ClearCompletedCommand = new RelayCommand(ClearCompleted);
+        RetryFailedCommand = new RelayCommand(RetryFailed, () => FailedFiles > 0);
+        BrowseDestinationCommand = new RelayCommand(BrowseDestinationFolder);
+        BrowsePackageFolderCommand = new RelayCommand(parameter => BrowsePackageFolder(parameter as PackageViewModel ?? SelectedPackage));
+        OpenPackageFolderCommand = new RelayCommand(parameter => OpenPackageFolder(parameter as PackageViewModel ?? SelectedPackage));
+        RemovePackageCommand = new RelayCommand(parameter => RemovePackage(parameter as PackageViewModel ?? SelectedPackage));
+        SelectedPackage = Packages.FirstOrDefault();
 
         if (MonitorClipboard)
         {
@@ -89,7 +97,89 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             {
                 StartCommand.RaiseCanExecuteChanged();
                 PauseCommand.RaiseCanExecuteChanged();
+                RefreshDashboard();
             }
+        }
+    }
+
+    public int PackageCount => Packages.Count;
+
+    public int TotalFiles => AllItems.Count();
+
+    public int ActiveDownloads => AllItems.Count(item => item.Status is DownloadStatus.Downloading or DownloadStatus.Resolving);
+
+    public int QueuedFiles => AllItems.Count(item => item.Status is DownloadStatus.Queued or DownloadStatus.Paused);
+
+    public int CompletedFiles => AllItems.Count(item => item.Status is DownloadStatus.Completed or DownloadStatus.Extracted);
+
+    public int FailedFiles => AllItems.Count(item => item.Status == DownloadStatus.Failed);
+
+    public long TotalDownloadedBytes => AllItems.Sum(item => item.DownloadedBytes);
+
+    public long? TotalSizeBytes
+    {
+        get
+        {
+            var knownSize = AllItems
+                .Where(item => item.SizeBytes.HasValue)
+                .Sum(item => item.SizeBytes!.Value);
+
+            return knownSize > 0 ? knownSize : null;
+        }
+    }
+
+    public double TotalSpeedBytesPerSecond => AllItems.Sum(item => item.SpeedBytesPerSecond);
+
+    public double OverallProgressPercent
+    {
+        get
+        {
+            var totalSize = TotalSizeBytes;
+            if (totalSize is > 0)
+            {
+                return Math.Clamp(TotalDownloadedBytes * 100d / totalSize.Value, 0, 100);
+            }
+
+            var items = AllItems.ToList();
+            return items.Count == 0 ? 0 : items.Average(item => item.ProgressPercent);
+        }
+    }
+
+    public string TotalSpeedText => TotalSpeedBytesPerSecond > 0 ? $"{FormatBytes((long)TotalSpeedBytesPerSecond)}/s" : "-";
+
+    public string CompletedText => TotalFiles == 0 ? "0/0" : $"{CompletedFiles}/{TotalFiles}";
+
+    public string OverallProgressText => $"{OverallProgressPercent:0}%";
+
+    public string TransferSummaryText => $"{FormatBytes(TotalDownloadedBytes)} / {(TotalSizeBytes.HasValue ? FormatBytes(TotalSizeBytes.Value) : "-")}";
+
+    public string ActiveDownloadsText => IsDownloading ? $"{ActiveDownloads} ativo(s)" : "Parado";
+
+    public string QueueStatusText
+    {
+        get
+        {
+            if (TotalFiles == 0)
+            {
+                return "Aguardando links";
+            }
+
+            if (IsDownloading)
+            {
+                return $"{ActiveDownloads} ativo(s), {QueuedFiles} na fila";
+            }
+
+            if (FailedFiles > 0)
+            {
+                return $"{FailedFiles} arquivo(s) com erro";
+            }
+
+            if (CompletedFiles == TotalFiles)
+            {
+                return "Tudo concluido";
+            }
+
+            return $"{QueuedFiles} arquivo(s) prontos";
         }
     }
 
@@ -102,6 +192,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             {
                 _settings.DestinationFolder = value;
                 OnPropertyChanged();
+                PersistSettings();
             }
         }
     }
@@ -111,10 +202,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         get => _settings.MaxConcurrentDownloads;
         set
         {
-            if (_settings.MaxConcurrentDownloads != value)
+            var clamped = Math.Clamp(value, 1, 16);
+            if (_settings.MaxConcurrentDownloads != clamped)
             {
-                _settings.MaxConcurrentDownloads = value;
+                _settings.MaxConcurrentDownloads = clamped;
                 OnPropertyChanged();
+                PersistSettings();
+                AdjustDownloadGate(clamped);
             }
         }
     }
@@ -124,10 +218,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         get => _settings.ConnectionsPerFile;
         set
         {
-            if (_settings.ConnectionsPerFile != value)
+            var clamped = Math.Clamp(value, 1, 16);
+            if (_settings.ConnectionsPerFile != clamped)
             {
-                _settings.ConnectionsPerFile = value;
+                _settings.ConnectionsPerFile = clamped;
                 OnPropertyChanged();
+                PersistSettings();
             }
         }
     }
@@ -137,10 +233,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         get => _settings.RetryCount;
         set
         {
-            if (_settings.RetryCount != value)
+            var clamped = Math.Clamp(value, 0, 20);
+            if (_settings.RetryCount != clamped)
             {
-                _settings.RetryCount = value;
+                _settings.RetryCount = clamped;
                 OnPropertyChanged();
+                PersistSettings();
             }
         }
     }
@@ -155,9 +253,15 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             {
                 _settings.SpeedLimitBytesPerSecond = bytes;
                 OnPropertyChanged();
+                OnPropertyChanged(nameof(SpeedLimitSummaryText));
+                PersistSettings();
             }
         }
     }
+
+    public string SpeedLimitSummaryText => SpeedLimitKilobytesPerSecond > 0
+        ? $"{SpeedLimitKilobytesPerSecond} KB/s"
+        : "Sem limite";
 
     public long MinMultiConnectionSizeMegabytes
     {
@@ -169,6 +273,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             {
                 _settings.MinMultiConnectionSizeBytes = bytes;
                 OnPropertyChanged();
+                PersistSettings();
             }
         }
     }
@@ -182,6 +287,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             {
                 _settings.EnableMultiConnectionDownloads = value;
                 OnPropertyChanged();
+                PersistSettings();
             }
         }
     }
@@ -195,6 +301,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             {
                 _settings.EnableAdaptiveConnectionCount = value;
                 OnPropertyChanged();
+                PersistSettings();
             }
         }
     }
@@ -208,6 +315,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             {
                 _settings.UseTemporaryDownloadFiles = value;
                 OnPropertyChanged();
+                PersistSettings();
             }
         }
     }
@@ -221,6 +329,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             {
                 _settings.ValidateRemoteIdentity = value;
                 OnPropertyChanged();
+                PersistSettings();
             }
         }
     }
@@ -234,6 +343,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             {
                 _settings.RenewExpiredLinks = value;
                 OnPropertyChanged();
+                PersistSettings();
             }
         }
     }
@@ -255,6 +365,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                     _clipboardMonitor.Stop();
                 }
                 OnPropertyChanged();
+                PersistSettings();
             }
         }
     }
@@ -268,6 +379,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             {
                 _settings.AutoExtract = value;
                 OnPropertyChanged();
+                PersistSettings();
             }
         }
     }
@@ -281,6 +393,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             {
                 _settings.AutoStart = value;
                 OnPropertyChanged();
+                PersistSettings();
             }
         }
     }
@@ -294,6 +407,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             {
                 _settings.CreateSubfolderPerPackage = value;
                 OnPropertyChanged();
+                PersistSettings();
             }
         }
     }
@@ -312,7 +426,19 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     public RelayCommand ClearCompletedCommand { get; }
 
+    public RelayCommand RetryFailedCommand { get; }
+
+    public RelayCommand BrowseDestinationCommand { get; }
+
+    public RelayCommand BrowsePackageFolderCommand { get; }
+
+    public RelayCommand OpenPackageFolderCommand { get; }
+
+    public RelayCommand RemovePackageCommand { get; }
+
     private string QueueStatePath => Path.Combine(_settingsStore.DataFolder, "queue.json");
+
+    private IEnumerable<DownloadItemViewModel> AllItems => Packages.SelectMany(package => package.Items);
 
     public void Dispose()
     {
@@ -446,16 +572,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private void RemoveSelectedPackage()
     {
-        if (SelectedPackage is null)
-        {
-            return;
-        }
-
-        _queue.RemovePackage(SelectedPackage.Id);
-        Packages.Remove(SelectedPackage);
-        SelectedPackage = Packages.FirstOrDefault();
-        SaveQueueState();
-        StartCommand.RaiseCanExecuteChanged();
+        RemovePackage(SelectedPackage);
     }
 
     private void ClearCompleted()
@@ -467,6 +584,75 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
         SelectedPackage = Packages.FirstOrDefault();
         SaveQueueState();
+        RefreshDashboard();
+    }
+
+    private void RetryFailed()
+    {
+        foreach (var item in AllItems.Where(item => item.Status == DownloadStatus.Failed))
+        {
+            item.Status = DownloadStatus.Queued;
+            item.ErrorMessage = null;
+        }
+
+        RefreshAllPackages();
+        SaveQueueState();
+    }
+
+    private void BrowseDestinationFolder()
+    {
+        var selected = _dialogs.BrowseFolder(DestinationFolder);
+        if (!string.IsNullOrWhiteSpace(selected))
+        {
+            DestinationFolder = selected;
+        }
+    }
+
+    private void BrowsePackageFolder(PackageViewModel? package)
+    {
+        if (package is null)
+        {
+            return;
+        }
+
+        var selected = _dialogs.BrowseFolder(package.DestinationFolder);
+        if (string.IsNullOrWhiteSpace(selected))
+        {
+            return;
+        }
+
+        package.DestinationFolder = selected;
+        package.RefreshComputed();
+        SaveQueueState();
+    }
+
+    private void OpenPackageFolder(PackageViewModel? package)
+    {
+        if (package is null)
+        {
+            return;
+        }
+
+        _dialogs.OpenFolder(GetPackageDestination(package));
+    }
+
+    private void RemovePackage(PackageViewModel? package)
+    {
+        if (package is null)
+        {
+            return;
+        }
+
+        _queue.RemovePackage(package.Id);
+        Packages.Remove(package);
+        if (SelectedPackage == package)
+        {
+            SelectedPackage = Packages.FirstOrDefault();
+        }
+
+        SaveQueueState();
+        RefreshDashboard();
+        StartCommand.RaiseCanExecuteChanged();
     }
 
     private async Task RunItemAsync(PackageViewModel package, DownloadItemViewModel item, SemaphoreSlim semaphore, CancellationToken token)
@@ -488,17 +674,20 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             {
                 item.RefreshFromModel();
                 package.RefreshComputed();
+                RefreshDashboard();
                 SaveQueueStateThrottled();
             });
 
             await DownloadWithRenewalAsync(resolver, item.Model, destination, progress, token);
             item.RefreshFromModel();
             package.RefreshComputed();
+            RefreshDashboard();
             SaveQueueState();
         }
         catch (OperationCanceledException)
         {
             item.Status = DownloadStatus.Paused;
+            RefreshDashboard();
             SaveQueueState();
         }
         catch (Exception ex)
@@ -507,11 +696,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             item.Status = DownloadStatus.Failed;
             item.ErrorMessage = ex.Message;
             StatusMessage = $"Erro em {item.FileName}: {ex.Message}";
+            RefreshDashboard();
             SaveQueueState();
         }
         finally
         {
             package.RefreshComputed();
+            RefreshDashboard();
             semaphore.Release();
         }
     }
@@ -601,10 +792,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             try
             {
                 return await resolver.ResolveAsync(link, token);
-            }
-            catch (ResolveRequiresBrowserException)
-            {
-                throw;
             }
             catch (Exception ex)
             {
@@ -706,13 +893,61 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    private void PersistSettings()
+    {
+        try
+        {
+            _settingsStore.Save(_settings);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error(ex, "Failed to persist settings");
+        }
+    }
+
+    private void AdjustDownloadGate(int size)
+    {
+        lock (_gateLock)
+        {
+            if (_downloadGateSize == size)
+            {
+                return;
+            }
+
+            _downloadGate?.Dispose();
+            _downloadGate = new SemaphoreSlim(size);
+            _downloadGateSize = size;
+        }
+    }
+
     private void RefreshAllPackages()
     {
         foreach (var package in Packages)
         {
             package.RefreshComputed();
         }
+        RefreshDashboard();
         StartCommand.RaiseCanExecuteChanged();
+    }
+
+    private void RefreshDashboard()
+    {
+        OnPropertyChanged(nameof(PackageCount));
+        OnPropertyChanged(nameof(TotalFiles));
+        OnPropertyChanged(nameof(ActiveDownloads));
+        OnPropertyChanged(nameof(QueuedFiles));
+        OnPropertyChanged(nameof(CompletedFiles));
+        OnPropertyChanged(nameof(FailedFiles));
+        OnPropertyChanged(nameof(TotalDownloadedBytes));
+        OnPropertyChanged(nameof(TotalSizeBytes));
+        OnPropertyChanged(nameof(TotalSpeedBytesPerSecond));
+        OnPropertyChanged(nameof(OverallProgressPercent));
+        OnPropertyChanged(nameof(TotalSpeedText));
+        OnPropertyChanged(nameof(CompletedText));
+        OnPropertyChanged(nameof(OverallProgressText));
+        OnPropertyChanged(nameof(TransferSummaryText));
+        OnPropertyChanged(nameof(ActiveDownloadsText));
+        OnPropertyChanged(nameof(QueueStatusText));
     }
 
     private static string SanitizeFolderName(string name)
@@ -723,5 +958,19 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
 
         return string.IsNullOrWhiteSpace(name) ? "package" : name;
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        var value = (double)bytes;
+        var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+
+        return $"{value:0.##} {units[unit]}";
     }
 }

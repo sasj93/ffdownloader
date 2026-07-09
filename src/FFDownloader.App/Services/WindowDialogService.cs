@@ -41,6 +41,21 @@ public sealed class WindowDialogService
         MessageBox.Show(_owner, message, "FFDOWNLOADER", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
+    public string? BrowseFolder(string initialPath)
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "Selecionar pasta"
+        };
+
+        if (!string.IsNullOrWhiteSpace(initialPath) && Directory.Exists(initialPath))
+        {
+            dialog.InitialDirectory = initialPath;
+        }
+
+        return dialog.ShowDialog(_owner) == true ? dialog.FolderName : null;
+    }
+
     public void OpenFolder(string path)
     {
         Directory.CreateDirectory(path);

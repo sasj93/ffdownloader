@@ -10,7 +10,7 @@ namespace FFDownloader.App.Services;
 public sealed class AutomaticFuckingFastResolver : IHostResolver
 {
     private static readonly TimeSpan BrowserTimeout = TimeSpan.FromSeconds(25);
-    private const string DownloadButtonXPath = "/html/body/div[2]/div/div[1]/button";
+    private const string DownloadButtonXPath = "/html/body/div[2]/div/div[1]/button | /html/body/div[2]/div/div[1]/a";
     private readonly FuckingFastResolver _httpResolver = new();
 
     public string Host => _httpResolver.Host;
@@ -140,6 +140,7 @@ public sealed class AutomaticFuckingFastResolver : IHostResolver
 
     private static async Task PollDocumentAsync(CoreWebView2 webView, LinkCandidate link, TaskCompletionSource<ResolvedDownload> completion, CancellationToken cancellationToken)
     {
+        var htmxAttempts = 0;
         var clickAttempts = 0;
 
         while (!completion.Task.IsCompleted && !cancellationToken.IsCancellationRequested)
@@ -148,6 +149,13 @@ public sealed class AutomaticFuckingFastResolver : IHostResolver
             {
                 completion.TrySetResult(resolved);
                 return;
+            }
+
+            if (htmxAttempts < 3 && await TryPostHtmxDownloadAsync(webView))
+            {
+                htmxAttempts++;
+                await Task.Delay(1_000, cancellationToken);
+                continue;
             }
 
             if (clickAttempts < 3 && await TryClickDownloadButtonAsync(webView))
@@ -193,6 +201,20 @@ public sealed class AutomaticFuckingFastResolver : IHostResolver
         catch (Exception ex)
         {
             AppLogger.Error(ex, "Hidden WebView2 resolver failed to click download button");
+            return false;
+        }
+    }
+
+    private static async Task<bool> TryPostHtmxDownloadAsync(CoreWebView2 webView)
+    {
+        try
+        {
+            var postedJson = await webView.ExecuteScriptAsync(HtmxPostDownloadScript);
+            return JsonSerializer.Deserialize<bool>(postedJson);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error(ex, "Hidden WebView2 resolver failed to POST htmx download endpoint");
             return false;
         }
     }
@@ -267,14 +289,43 @@ public sealed class AutomaticFuckingFastResolver : IHostResolver
         })();
         """.Replace("__DOWNLOAD_BUTTON_XPATH__", DownloadButtonXPath);
 
+    private static string HtmxPostDownloadScript => """
+        (() => {
+          if (window.__ffdownloaderHtmxPosted) {
+            return false;
+          }
+
+          const trigger = document.querySelector('a.link-button[hx-post], button.link-button[hx-post], [hx-post]');
+          if (!trigger) {
+            return false;
+          }
+
+          window.__ffdownloaderHtmxPosted = true;
+          fetch(trigger.getAttribute('hx-post'), { method: 'POST', headers: { 'HX-Request': 'true' } })
+            .then((response) => {
+              const url = response.headers.get('HX-Redirect') || response.headers.get('Location');
+              if (url) {
+                window.chrome?.webview?.postMessage(String(url));
+              } else {
+                window.__ffdownloaderHtmxPosted = false;
+              }
+            })
+            .catch(() => {
+              window.__ffdownloaderHtmxPosted = false;
+            });
+
+          return true;
+        })();
+        """;
+
     private static string ClickDownloadButtonScript => """
         (() => {
           const xpathNode = document.evaluate('__DOWNLOAD_BUTTON_XPATH__', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
           const button =
             xpathNode ||
-            document.querySelector('button.link-button.text-5xl.gay-button') ||
-            document.querySelector('button.link-button') ||
-            Array.from(document.querySelectorAll('button')).find((node) => /download/i.test(node.textContent || ''));
+            document.querySelector('button.link-button.text-5xl.gay-button, a.link-button.text-5xl.gay-button') ||
+            document.querySelector('button.link-button, a.link-button, [hx-post]') ||
+            Array.from(document.querySelectorAll('button, a')).find((node) => /^\s*download\s*$/i.test(node.textContent || ''));
 
           if (!button) {
             return false;

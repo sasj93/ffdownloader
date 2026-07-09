@@ -19,6 +19,14 @@ FFDOWNLOADER is a portable Windows download manager built with .NET 8 and WPF. I
 - Automatic retry and expired `/dl/` URL renewal.
 - Speed limit, concurrent downloads, connection count, extraction and password settings.
 - Automatic extraction for supported archives through SharpCompress.
+- Classic download-manager UI inspired by JDownloader and IDM.
+- Expandable package rows with per-file status, progress, speed and errors inline.
+
+## Screenshots
+
+![FFDOWNLOADER main download queue](docs/assets/screenshots/ffdownloader-main.png)
+
+![Expanded package with per-file progress](docs/assets/screenshots/ffdownloader-expanded-package.png)
 
 ## Download
 
@@ -45,7 +53,7 @@ Requirements:
 Build and test:
 
 ```powershell
-dotnet test tests\FFDownloader.Core.Tests\FFDownloader.Core.Tests.csproj
+dotnet test FFDownloader.sln
 dotnet build src\FFDownloader.App\FFDownloader.App.csproj -c Release
 ```
 
@@ -65,7 +73,9 @@ src/
   FFDownloader.App/      WPF application
 tests/
   FFDownloader.Core.Tests/
+  FFDownloader.App.Tests/
 docs/
+  assets/screenshots/
   ARCHITECTURE.md
   DOWNLOAD_ENGINE.md
   HOST_RESOLVERS.md
