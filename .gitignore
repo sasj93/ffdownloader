@@ -3,6 +3,7 @@
 **/obj/
 dist/
 artifacts/
+publish/
 
 # Local toolchains and generated state
 .dotnet/

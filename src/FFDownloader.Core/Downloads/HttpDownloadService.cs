@@ -139,7 +139,7 @@ public sealed class HttpDownloadService
                 true))
             {
                 var buffer = new byte[BufferSize];
-                var limiter = new DownloadSpeedLimiter(settings.SpeedLimitBytesPerSecond);
+                var limiter = new DownloadSpeedLimiter(() => settings.SpeedLimitBytesPerSecond);
                 var speedWindow = new SpeedWindow();
                 item.DownloadedBytes = total;
                 progress?.Report(CreateProgress(item));
@@ -188,7 +188,7 @@ public sealed class HttpDownloadService
             : CreateSegmentedState(resolved, totalBytes, segments);
         SaveResumeState(paths, state);
 
-        var limiter = new DownloadSpeedLimiter(settings.SpeedLimitBytesPerSecond);
+        var limiter = new DownloadSpeedLimiter(() => settings.SpeedLimitBytesPerSecond);
         var speedWindow = new SpeedWindow();
 
         var firstResult = await DownloadSegmentAsync(item, paths, segments[0], resolved.DownloadUrl, state, settings, limiter, speedWindow, progress, cancellationToken);
@@ -654,22 +654,32 @@ public sealed class HttpDownloadService
         RangeNotSupported
     }
 
-    private sealed class DownloadSpeedLimiter(long bytesPerSecond)
+    private sealed class DownloadSpeedLimiter(Func<long> bytesPerSecondProvider)
     {
         private readonly Stopwatch _stopwatch = Stopwatch.StartNew();
         private readonly SemaphoreSlim _gate = new(1, 1);
         private long _bytes;
+        private long _activeLimit;
 
         public async Task ThrottleAsync(int bytes, CancellationToken cancellationToken)
         {
+            var bytesPerSecond = bytesPerSecondProvider();
             if (bytesPerSecond <= 0)
             {
+                _activeLimit = 0;
                 return;
             }
 
             await _gate.WaitAsync(cancellationToken);
             try
             {
+                if (_activeLimit != bytesPerSecond)
+                {
+                    _activeLimit = bytesPerSecond;
+                    _bytes = 0;
+                    _stopwatch.Restart();
+                }
+
                 _bytes += bytes;
                 var expectedSeconds = _bytes / (double)bytesPerSecond;
                 var delay = expectedSeconds - _stopwatch.Elapsed.TotalSeconds;

@@ -155,6 +155,68 @@ public sealed class FuckingFastResolverTests
     }
 
     [Fact]
+    public async Task ResolveAsync_resolves_htmx_go_endpoint_via_hx_redirect_header()
+    {
+        var pageHtml = """
+            <html>
+              <body>
+                <a class="link-button text-5xl gay-button" hx-post="/f/y0mqwf4nw1tx/go" hx-swap="none" rel="noopener">DOWNLOAD</a>
+                <br>
+                <span class="text-gray-500">Size: 500.0MB | Downloads: 86468</span>
+              </body>
+            </html>
+            """;
+        var handler = new RoutedHttpMessageHandler(request =>
+        {
+            if (request.Method == HttpMethod.Get)
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(pageHtml) };
+            }
+
+            var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("OK") };
+            response.Headers.TryAddWithoutValidation("HX-Redirect", "https://dl.fuckingfast.co/dl/token123");
+            return response;
+        });
+        var resolver = new FuckingFastResolver(new HttpClient(handler));
+        var link = DownloadLinkParser.ParseMany("https://fuckingfast.co/y0mqwf4nw1tx#RDR2_--_fitgirl-repacks.site_--_.part001.rar").Single();
+
+        var resolved = await resolver.ResolveAsync(link, CancellationToken.None);
+
+        resolved.DownloadUrl.Should().Be("https://dl.fuckingfast.co/dl/token123");
+        resolved.FileName.Should().Be("RDR2_--_fitgirl-repacks.site_--_.part001.rar");
+        resolved.SizeBytes.Should().Be(524_288_000);
+        handler.LastPostRequest.Should().NotBeNull();
+        handler.LastPostRequest!.RequestUri!.AbsoluteUri.Should().Be("https://fuckingfast.co/f/y0mqwf4nw1tx/go");
+        handler.LastPostRequest.Headers.Contains("HX-Request").Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_derives_go_endpoint_when_page_does_not_expose_hx_post()
+    {
+        var handler = new RoutedHttpMessageHandler(request =>
+        {
+            if (request.Method == HttpMethod.Get)
+            {
+                return new HttpResponseMessage(HttpStatusCode.Forbidden)
+                {
+                    Content = new StringContent("Enable JavaScript and cookies to continue")
+                };
+            }
+
+            var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("OK") };
+            response.Headers.TryAddWithoutValidation("HX-Redirect", "https://dl.fuckingfast.co/dl/token456");
+            return response;
+        });
+        var resolver = new FuckingFastResolver(new HttpClient(handler));
+        var link = DownloadLinkParser.ParseMany("https://fuckingfast.co/64k83eckz3ia#File.part001.rar").Single();
+
+        var resolved = await resolver.ResolveAsync(link, CancellationToken.None);
+
+        resolved.DownloadUrl.Should().Be("https://dl.fuckingfast.co/dl/token456");
+        handler.LastPostRequest!.RequestUri!.AbsoluteUri.Should().Be("https://fuckingfast.co/f/64k83eckz3ia/go");
+    }
+
+    [Fact]
     public async Task ResolveAsync_throws_browser_required_when_page_is_challenge()
     {
         var handler = new StubHttpMessageHandler(new HttpResponseMessage(HttpStatusCode.Forbidden)
@@ -178,5 +240,20 @@ public sealed class FuckingFastResolverTests
         }
 
         public HttpRequestMessage? LastRequest { get; private set; }
+    }
+
+    private sealed class RoutedHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                LastPostRequest = request;
+            }
+
+            return Task.FromResult(responder(request));
+        }
+
+        public HttpRequestMessage? LastPostRequest { get; private set; }
     }
 }

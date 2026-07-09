@@ -3,61 +3,309 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
-        <SolidColorBrush x:Key="AppBg" Color="#070B16" />
-        <SolidColorBrush x:Key="PanelBg" Color="#0D1424" />
-        <SolidColorBrush x:Key="BorderBrushSoft" Color="#243047" />
-        <SolidColorBrush x:Key="TextMain" Color="#E5EDF7" />
-        <SolidColorBrush x:Key="TextMuted" Color="#8EA0B8" />
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
 
-        <Style TargetType="Button">
-            <Setter Property="Background" Value="#182235" />
-            <Setter Property="Foreground" Value="#E5EDF7" />
-            <Setter Property="BorderBrush" Value="#2A3A55" />
+        <Color x:Key="ColorCanvas0">#F3F6FA</Color>
+        <Color x:Key="ColorCanvas1">#E7EDF5</Color>
+        <Color x:Key="ColorPanel">#FFFFFF</Color>
+        <Color x:Key="ColorPanelRaised">#F8FAFD</Color>
+        <Color x:Key="ColorToolbar">#EAF0F7</Color>
+        <Color x:Key="ColorHeader">#DCE6F2</Color>
+        <Color x:Key="ColorStroke">#B9C7D8</Color>
+        <Color x:Key="ColorStrokeStrong">#8798AD</Color>
+        <Color x:Key="ColorText">#172033</Color>
+        <Color x:Key="ColorTextMuted">#5D6B7F</Color>
+        <Color x:Key="ColorTextFaint">#8A98AA</Color>
+        <Color x:Key="ColorAccent">#2D7DD2</Color>
+        <Color x:Key="ColorAccentBlue">#1666B7</Color>
+        <Color x:Key="ColorAccentViolet">#5A68B8</Color>
+        <Color x:Key="ColorDanger">#C42B1C</Color>
+        <Color x:Key="ColorWarning">#B7791F</Color>
+        <Color x:Key="ColorSuccess">#168A36</Color>
+
+        <SolidColorBrush x:Key="AppBg" Color="{StaticResource ColorCanvas0}" />
+        <SolidColorBrush x:Key="PanelBg" Color="{StaticResource ColorPanel}" />
+        <SolidColorBrush x:Key="PanelRaisedBrush" Color="{StaticResource ColorPanelRaised}" />
+        <SolidColorBrush x:Key="ToolbarBrush" Color="{StaticResource ColorToolbar}" />
+        <SolidColorBrush x:Key="HeaderBrush" Color="{StaticResource ColorHeader}" />
+        <SolidColorBrush x:Key="BorderBrushSoft" Color="{StaticResource ColorStroke}" />
+        <SolidColorBrush x:Key="BorderBrushStrong" Color="{StaticResource ColorStrokeStrong}" />
+        <SolidColorBrush x:Key="TextMain" Color="{StaticResource ColorText}" />
+        <SolidColorBrush x:Key="TextMuted" Color="{StaticResource ColorTextMuted}" />
+        <SolidColorBrush x:Key="TextFaintBrush" Color="{StaticResource ColorTextFaint}" />
+        <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource ColorAccent}" />
+        <SolidColorBrush x:Key="AccentBlueBrush" Color="{StaticResource ColorAccentBlue}" />
+        <SolidColorBrush x:Key="AccentVioletBrush" Color="{StaticResource ColorAccentViolet}" />
+        <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource ColorDanger}" />
+        <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource ColorWarning}" />
+        <SolidColorBrush x:Key="SuccessBrush" Color="{StaticResource ColorSuccess}" />
+        <SolidColorBrush x:Key="AppBackgroundBrush" Color="{StaticResource ColorCanvas0}" />
+        <SolidColorBrush x:Key="SidebarBackgroundBrush" Color="{StaticResource ColorPanelRaised}" />
+        <SolidColorBrush x:Key="HeroGradientBrush" Color="{StaticResource ColorToolbar}" />
+        <SolidColorBrush x:Key="CardGradientBrush" Color="{StaticResource ColorPanel}" />
+
+        <LinearGradientBrush x:Key="AccentGradientBrush" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#45A0F0" Offset="0" />
+            <GradientStop Color="#176FC6" Offset="1" />
+        </LinearGradientBrush>
+
+        <DropShadowEffect x:Key="PanelShadow"
+                          BlurRadius="8"
+                          ShadowDepth="1"
+                          Direction="270"
+                          Opacity="0.14"
+                          Color="#000000" />
+
+        <Style x:Key="CardBorder" TargetType="{x:Type Border}">
+            <Setter Property="Background" Value="{StaticResource PanelBg}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSoft}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Padding" Value="12,7" />
-            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="10" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+        </Style>
+
+        <Style x:Key="SectionTitleText" TargetType="{x:Type TextBlock}">
+            <Setter Property="Foreground" Value="{StaticResource TextMain}" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <Style x:Key="SectionCaptionText" TargetType="{x:Type TextBlock}">
+            <Setter Property="Foreground" Value="{StaticResource TextMuted}" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+
+        <Style x:Key="MetricValueText" TargetType="{x:Type TextBlock}">
+            <Setter Property="Foreground" Value="{StaticResource TextMain}" />
+            <Setter Property="FontSize" Value="17" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <Style x:Key="MetricLabelText" TargetType="{x:Type TextBlock}">
+            <Setter Property="Foreground" Value="{StaticResource TextMuted}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+        </Style>
+
+        <Style x:Key="MutedText" TargetType="{x:Type TextBlock}">
+            <Setter Property="Foreground" Value="{StaticResource TextMuted}" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+
+        <Style x:Key="CellTextBlock" TargetType="{x:Type TextBlock}">
+            <Setter Property="Foreground" Value="{StaticResource TextMain}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="8,0" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <Style x:Key="CellMutedTextBlock" TargetType="{x:Type TextBlock}" BasedOn="{StaticResource CellTextBlock}">
+            <Setter Property="Foreground" Value="{StaticResource TextMuted}" />
+        </Style>
+
+        <Style x:Key="BaseButton" TargetType="{x:Type Button}">
+            <Setter Property="Background" Value="#F7FAFE" />
+            <Setter Property="Foreground" Value="{StaticResource TextMain}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSoft}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="11,6" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4"
+                                Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              RecognizesAccessKey="True" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="#EAF4FF" />
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource AccentBlueBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="#D7E9FB" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{StaticResource TextFaintBrush}" />
+                                <Setter TargetName="Root" Property="Opacity" Value="0.58" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="{x:Type Button}" BasedOn="{StaticResource BaseButton}" />
+
+        <Style x:Key="PrimaryButton" TargetType="{x:Type Button}" BasedOn="{StaticResource BaseButton}">
+            <Setter Property="Background" Value="{StaticResource AccentGradientBrush}" />
+            <Setter Property="BorderBrush" Value="#0E5EAA" />
+            <Setter Property="Foreground" Value="#FFFFFF" />
+        </Style>
+
+        <Style x:Key="GhostButton" TargetType="{x:Type Button}" BasedOn="{StaticResource BaseButton}">
+            <Setter Property="Background" Value="#F8FAFD" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSoft}" />
+        </Style>
+
+        <Style x:Key="DangerButton" TargetType="{x:Type Button}" BasedOn="{StaticResource BaseButton}">
+            <Setter Property="Background" Value="#FFF2F0" />
+            <Setter Property="BorderBrush" Value="#E19B93" />
+            <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+        </Style>
+
+        <Style x:Key="ToolbarButton" TargetType="{x:Type Button}" BasedOn="{StaticResource BaseButton}">
+            <Setter Property="Width" Value="94" />
+            <Setter Property="Height" Value="52" />
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+
+        <Style x:Key="ToolbarPrimaryButton" TargetType="{x:Type Button}" BasedOn="{StaticResource ToolbarButton}">
+            <Setter Property="Background" Value="{StaticResource AccentGradientBrush}" />
+            <Setter Property="BorderBrush" Value="#0E5EAA" />
+            <Setter Property="Foreground" Value="#FFFFFF" />
+        </Style>
+
+        <Style x:Key="MiniButton" TargetType="{x:Type Button}" BasedOn="{StaticResource BaseButton}">
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Padding" Value="9,3" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+
+        <Style TargetType="{x:Type TextBox}">
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="Foreground" Value="{StaticResource TextMain}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSoft}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CaretBrush" Value="{StaticResource AccentBlueBrush}" />
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="SelectionBrush" Value="#BCD9F6" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
+        <Style TargetType="{x:Type CheckBox}">
+            <Setter Property="Foreground" Value="{StaticResource TextMain}" />
+            <Setter Property="Margin" Value="0,6,0,0" />
             <Setter Property="Cursor" Value="Hand" />
         </Style>
 
-        <Style TargetType="TextBox">
-            <Setter Property="Background" Value="#0F172A" />
-            <Setter Property="Foreground" Value="#E5EDF7" />
-            <Setter Property="BorderBrush" Value="#243047" />
-            <Setter Property="CaretBrush" Value="#22D3EE" />
-            <Setter Property="Padding" Value="8,5" />
+        <Style TargetType="{x:Type Menu}">
+            <Setter Property="Background" Value="#F8FAFD" />
+            <Setter Property="Foreground" Value="{StaticResource TextMain}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSoft}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="FontSize" Value="13" />
         </Style>
 
-        <Style TargetType="CheckBox">
-            <Setter Property="Foreground" Value="#E5EDF7" />
-            <Setter Property="Margin" Value="0,6,0,0" />
+        <Style TargetType="{x:Type StatusBar}">
+            <Setter Property="Background" Value="#E8EEF6" />
+            <Setter Property="Foreground" Value="{StaticResource TextMain}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSoft}" />
+            <Setter Property="BorderThickness" Value="0,1,0,0" />
+            <Setter Property="MinHeight" Value="28" />
         </Style>
 
-        <Style TargetType="DataGrid">
-            <Setter Property="Background" Value="#0F172A" />
-            <Setter Property="Foreground" Value="#E5EDF7" />
-            <Setter Property="BorderBrush" Value="#243047" />
+        <Style TargetType="{x:Type TabControl}">
+            <Setter Property="Background" Value="{StaticResource PanelBg}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSoft}" />
+        </Style>
+
+        <Style TargetType="{x:Type TabItem}">
+            <Setter Property="Padding" Value="15,7" />
+            <Setter Property="Foreground" Value="{StaticResource TextMain}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <Style TargetType="{x:Type DataGrid}">
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="Foreground" Value="{StaticResource TextMain}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSoft}" />
+            <Setter Property="BorderThickness" Value="1" />
             <Setter Property="GridLinesVisibility" Value="Horizontal" />
-            <Setter Property="HorizontalGridLinesBrush" Value="#1E293B" />
-            <Setter Property="RowBackground" Value="#0F172A" />
-            <Setter Property="AlternatingRowBackground" Value="#111C2F" />
+            <Setter Property="HorizontalGridLinesBrush" Value="#E0E7F0" />
+            <Setter Property="RowBackground" Value="#FFFFFF" />
+            <Setter Property="AlternatingRowBackground" Value="#F5F9FE" />
             <Setter Property="HeadersVisibility" Value="Column" />
             <Setter Property="CanUserAddRows" Value="False" />
             <Setter Property="CanUserDeleteRows" Value="False" />
             <Setter Property="AutoGenerateColumns" Value="False" />
+            <Setter Property="SelectionMode" Value="Single" />
+            <Setter Property="SelectionUnit" Value="FullRow" />
+            <Setter Property="MinRowHeight" Value="32" />
+            <Setter Property="ColumnHeaderHeight" Value="31" />
+            <Setter Property="FontSize" Value="12" />
         </Style>
 
-        <Style TargetType="DataGridColumnHeader">
-            <Setter Property="Background" Value="#111827" />
-            <Setter Property="Foreground" Value="#8EA0B8" />
-            <Setter Property="BorderBrush" Value="#243047" />
-            <Setter Property="Padding" Value="10,8" />
+        <Style TargetType="{x:Type DataGridColumnHeader}">
+            <Setter Property="Background" Value="#E4ECF6" />
+            <Setter Property="Foreground" Value="{StaticResource TextMain}" />
+            <Setter Property="BorderBrush" Value="#C7D4E4" />
+            <Setter Property="BorderThickness" Value="0,0,1,1" />
+            <Setter Property="Padding" Value="8,0" />
             <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="12" />
         </Style>
 
-        <Style TargetType="ProgressBar">
-            <Setter Property="Foreground" Value="#22D3EE" />
-            <Setter Property="Background" Value="#1F2937" />
-            <Setter Property="Height" Value="8" />
+        <Style TargetType="{x:Type DataGridRow}">
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#EAF4FF" />
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#B9DCF9" />
+                    <Setter Property="Foreground" Value="{StaticResource TextMain}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="{x:Type DataGridCell}">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="Transparent" />
+                    <Setter Property="Foreground" Value="{StaticResource TextMain}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="{x:Type ProgressBar}">
+            <Setter Property="Foreground" Value="{StaticResource SuccessBrush}" />
+            <Setter Property="Background" Value="#D6DEE9" />
+            <Setter Property="Height" Value="9" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ProgressBar}">
+                        <Grid Height="{TemplateBinding Height}" SnapsToDevicePixels="True">
+                            <Border x:Name="PART_Track"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="3" />
+                            <Decorator x:Name="PART_Indicator"
+                                       HorizontalAlignment="Left">
+                                <Border Background="{TemplateBinding Foreground}"
+                                        CornerRadius="3" />
+                            </Decorator>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </Application.Resources>
 </Application>

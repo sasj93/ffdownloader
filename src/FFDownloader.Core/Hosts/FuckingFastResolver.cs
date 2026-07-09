@@ -33,7 +33,25 @@ public sealed partial class FuckingFastResolver : IHostResolver
         using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         var html = await response.Content.ReadAsStringAsync(cancellationToken);
 
-        var downloadUrl = FindDownloadUrl(html, link.SourceUrl);
+        var downloadUrl = FindPreferredDownloadUrl(html, link.SourceUrl);
+        if (downloadUrl is not null)
+        {
+            return new ResolvedDownload(downloadUrl, link.FileName, ParseAdvertisedSize(html));
+        }
+
+        // Current site layout: the DOWNLOAD anchor issues an htmx POST to /f/{id}/go and the
+        // direct dl.fuckingfast.co URL comes back in the HX-Redirect response header.
+        var goEndpoint = FindGoEndpoint(html, link.SourceUrl) ?? BuildGoEndpointFromSourceUrl(link.SourceUrl);
+        if (goEndpoint is not null)
+        {
+            var redirected = await TryResolveViaGoEndpointAsync(goEndpoint, link.SourceUrl, cancellationToken);
+            if (redirected is not null)
+            {
+                return new ResolvedDownload(redirected, link.FileName, ParseAdvertisedSize(html));
+            }
+        }
+
+        downloadUrl = FindFallbackDownloadUrl(html, link.SourceUrl);
         if (downloadUrl is not null)
         {
             return new ResolvedDownload(downloadUrl, link.FileName, ParseAdvertisedSize(html));
@@ -92,6 +110,11 @@ public sealed partial class FuckingFastResolver : IHostResolver
 
     private static string? FindDownloadUrl(string html, string sourceUrl)
     {
+        return FindPreferredDownloadUrl(html, sourceUrl) ?? FindFallbackDownloadUrl(html, sourceUrl);
+    }
+
+    private static string? FindPreferredDownloadUrl(string html, string sourceUrl)
+    {
         var windowOpen = WindowOpenRegex().Matches(html)
             .Select(match => WebUtility.HtmlDecode(match.Groups["url"].Value))
             .Select(url => NormalizeUrl(url, sourceUrl))
@@ -102,20 +125,79 @@ public sealed partial class FuckingFastResolver : IHostResolver
             return windowOpen;
         }
 
-        var preferred = DownloadAnchorRegex().Matches(html)
+        return DownloadAnchorRegex().Matches(html)
             .Select(match => WebUtility.HtmlDecode(match.Groups["url"].Value))
             .Select(url => NormalizeUrl(url, sourceUrl))
             .FirstOrDefault(url => IsUsableDownloadUrl(url, sourceUrl));
+    }
 
-        if (preferred is not null)
-        {
-            return preferred;
-        }
-
+    private static string? FindFallbackDownloadUrl(string html, string sourceUrl)
+    {
         return AnyHrefRegex().Matches(html)
             .Select(match => WebUtility.HtmlDecode(match.Groups["url"].Value))
             .Select(url => NormalizeUrl(url, sourceUrl))
             .FirstOrDefault(url => IsUsableDownloadUrl(url, sourceUrl));
+    }
+
+    private async Task<string?> TryResolveViaGoEndpointAsync(string goEndpoint, string sourceUrl, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, goEndpoint);
+        ApplyBrowserLikeHeaders(request);
+        if (Uri.TryCreate(StripFragment(sourceUrl), UriKind.Absolute, out var pageUri))
+        {
+            request.Headers.Referrer = pageUri;
+            request.Headers.TryAddWithoutValidation("Origin", pageUri.GetLeftPart(UriPartial.Authority));
+            request.Headers.TryAddWithoutValidation("HX-Current-URL", pageUri.AbsoluteUri);
+        }
+
+        request.Headers.TryAddWithoutValidation("HX-Request", "true");
+        request.Content = new ByteArrayContent([]);
+
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+
+        if (response.Headers.TryGetValues("HX-Redirect", out var redirects))
+        {
+            var redirected = redirects
+                .Select(value => NormalizeUrl(WebUtility.HtmlDecode(value), sourceUrl))
+                .FirstOrDefault(url => IsUsableDownloadUrl(url, sourceUrl));
+            if (redirected is not null)
+            {
+                return redirected;
+            }
+        }
+
+        // A plain 3xx is auto-followed by HttpClient; the final request URI is then the direct file.
+        var finalUrl = response.RequestMessage?.RequestUri?.AbsoluteUri;
+        return IsFuckingFastDownloadUrl(finalUrl) ? finalUrl : null;
+    }
+
+    private static string? FindGoEndpoint(string html, string sourceUrl)
+    {
+        var endpoints = HxPostRegex().Matches(html)
+            .Select(match => WebUtility.HtmlDecode(match.Groups["url"].Value))
+            .Select(url => NormalizeUrl(url, sourceUrl))
+            .Where(url => url is not null)
+            .ToArray();
+
+        return endpoints.FirstOrDefault(url => url!.Contains("/f/", StringComparison.OrdinalIgnoreCase)
+                || url.EndsWith("/go", StringComparison.OrdinalIgnoreCase))
+            ?? endpoints.FirstOrDefault();
+    }
+
+    private static string? BuildGoEndpointFromSourceUrl(string sourceUrl)
+    {
+        if (!Uri.TryCreate(StripFragment(sourceUrl), UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        var fileId = uri.AbsolutePath.Trim('/');
+        if (fileId.Length == 0 || fileId.Contains('/'))
+        {
+            return null;
+        }
+
+        return $"{uri.GetLeftPart(UriPartial.Authority)}/f/{fileId}/go";
     }
 
     private static string? NormalizeUrl(string url, string sourceUrl)
@@ -203,6 +285,9 @@ public sealed partial class FuckingFastResolver : IHostResolver
 
     [GeneratedRegex(@"href\s*=\s*[""'](?<url>https?://[^""']+)[""']", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex AnyHrefRegex();
+
+    [GeneratedRegex(@"hx-post\s*=\s*[""'](?<url>[^""']+)[""']", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex HxPostRegex();
 
     [GeneratedRegex(@"(?:Size\s*:\s*)?(?<value>\d+(?:[\.,]\d+)?)\s*(?<unit>B|KB|MB|GB|TB)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex SizeRegex();
