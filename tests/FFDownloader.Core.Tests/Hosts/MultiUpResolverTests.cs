@@ -57,6 +57,87 @@ public sealed class MultiUpResolverTests
     }
 
     [Fact]
+    public async Task ResolveAsync_falls_back_to_next_mirror_when_the_first_one_fails()
+    {
+        var mirrorListHtml = """
+            <html><body>
+            <a href="https://gofile.io/d/xyz" target="_blank" nameHost="gofile.io" id="1">Download</a>
+            <a href="https://fuckingfast.co/tok3n#Game.rar" target="_blank" nameHost="fuckingfast.co" id="2">Download</a>
+            </body></html>
+            """;
+        var handler = new RoutedHttpMessageHandler(request =>
+        {
+            if (request.Method == HttpMethod.Get)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(SharePageHtml) });
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(mirrorListHtml) });
+        });
+
+        var failingResolver = new FakeResolver("gofile.io", _ => throw new InvalidOperationException("Daily download limit reached for this host."));
+        var succeedingResolver = new FakeResolver("fuckingfast.co", link => new ResolvedDownload("https://fuckingfast.co/dl/tok3n/Game.rar", link.FileName ?? "Game.rar", null));
+
+        var mirrorRegistry = new ResolverRegistry([failingResolver, succeedingResolver]);
+        var resolver = new MultiUpResolver(mirrorRegistry, new HttpClient(handler));
+        var link = DownloadLinkParser.ParseMany("https://multiup.io/download/abc123/Game.rar").Single();
+
+        var resolved = await resolver.ResolveAsync(link, CancellationToken.None);
+
+        resolved.DownloadUrl.Should().Be("https://fuckingfast.co/dl/tok3n/Game.rar");
+        failingResolver.CallCount.Should().Be(1);
+        succeedingResolver.CallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_throws_aggregate_error_when_every_matching_mirror_fails()
+    {
+        var mirrorListHtml = """
+            <html><body>
+            <a href="https://gofile.io/d/xyz" target="_blank" nameHost="gofile.io" id="1">Download</a>
+            <a href="https://fuckingfast.co/tok3n#Game.rar" target="_blank" nameHost="fuckingfast.co" id="2">Download</a>
+            </body></html>
+            """;
+        var handler = new RoutedHttpMessageHandler(request =>
+        {
+            if (request.Method == HttpMethod.Get)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(SharePageHtml) });
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(mirrorListHtml) });
+        });
+
+        var mirrorRegistry = new ResolverRegistry([
+            new FakeResolver("gofile.io", _ => throw new InvalidOperationException("Daily download limit reached for this host.")),
+            new FakeResolver("fuckingfast.co", _ => throw new InvalidOperationException("File removed from this host."))
+        ]);
+        var resolver = new MultiUpResolver(mirrorRegistry, new HttpClient(handler));
+        var link = DownloadLinkParser.ParseMany("https://multiup.io/download/abc123/Game.rar").Single();
+
+        var act = () => resolver.ResolveAsync(link, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<InvalidOperationException>())
+            .WithMessage("*Daily download limit reached*")
+            .WithMessage("*File removed from this host*");
+    }
+
+    private sealed class FakeResolver(string host, Func<LinkCandidate, ResolvedDownload> resolve) : IHostResolver
+    {
+        public int CallCount { get; private set; }
+
+        public string Host => host;
+
+        public bool CanResolve(LinkCandidate link) => string.Equals(link.Host, host, StringComparison.OrdinalIgnoreCase);
+
+        public Task<ResolvedDownload> ResolveAsync(LinkCandidate link, CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.FromResult(resolve(link));
+        }
+    }
+
+    [Fact]
     public async Task ResolveAsync_throws_with_unsupported_host_list_when_no_mirror_matches()
     {
         var mirrorListHtml = """

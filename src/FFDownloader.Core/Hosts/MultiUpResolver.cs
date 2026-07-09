@@ -62,14 +62,36 @@ public sealed partial class MultiUpResolver : IHostResolver
             throw new ResolveRequiresBrowserException("MultiUp did not return any mirror links to the automatic resolver.");
         }
 
+        var failures = new List<string>();
         foreach (var mirror in mirrors)
         {
             var mirrorLink = new LinkCandidate(mirror.Url, mirror.Host, link.FileName, link.PackageName, link.PartNumber, link.IsArchivePart);
             var resolver = _mirrorRegistry.FindResolver(mirrorLink);
-            if (resolver is not null)
+            if (resolver is null)
+            {
+                continue;
+            }
+
+            try
             {
                 return await resolver.ResolveAsync(mirrorLink, cancellationToken);
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // A mirror can fail for reasons unrelated to the file itself (daily quota hit,
+                // temporary outage, dead link on that specific host). MultiUp lists the same file
+                // on several hosts precisely so another one can be tried instead of giving up.
+                failures.Add($"{mirror.Host}: {ex.Message}");
+            }
+        }
+
+        if (failures.Count > 0)
+        {
+            throw new InvalidOperationException($"MultiUp mirrors were all tried and failed: {string.Join(" | ", failures)}");
         }
 
         var hostList = string.Join(", ", mirrors.Select(mirror => mirror.Host).Distinct(StringComparer.OrdinalIgnoreCase));

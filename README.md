@@ -106,7 +106,7 @@ FFDOWNLOADER recognizes and downloads from **35 hosts** in total.
 | `fuckingfast.co` | HTTP parser plus hidden WebView2 fallback for button-based `/dl/` resolution. |
 | `datanodes.to` | HTTP parser speaking the site's `download1`/`download2` protocol, plus hidden WebView2 fallback for captcha/password files. |
 | `mediafire.com` | HTTP parser reading the embedded direct link, plus hidden WebView2 fallback for password-protected files. |
-| `multiup.io` / `multiup.org` | Mirror aggregator: fetches the mirror list and delegates to whichever listed mirror matches one of the other 34 supported hosts below. Fails with a clear message naming the mirrors when none match. |
+| `multiup.io` / `multiup.org` | Mirror aggregator: fetches the mirror list and delegates to whichever listed mirror matches one of the other 34 supported hosts below. If a matched mirror fails (daily quota hit, file removed, temporary outage, etc.) it automatically tries the next matching mirror instead of giving up. Fails only once every matched mirror has been tried, naming the untried/unsupported mirrors when none match at all. |
 
 ### Generic mirror hosts (hidden WebView2, escalates to an interactive captcha-solving window when needed)
 
