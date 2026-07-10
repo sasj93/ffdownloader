@@ -2,7 +2,7 @@
 
 All notable changes to FFDOWNLOADER will be documented in this file.
 
-## Unreleased
+## 1.1.0 - 2026-07-10
 
 ### Added
 
@@ -22,6 +22,8 @@ All notable changes to FFDOWNLOADER will be documented in this file.
 - Disposing the torrent engine (e.g. on app close) no longer risks a UI-thread deadlock: the async shutdown now runs off the calling thread instead of blocking synchronously on the WPF dispatcher's own synchronization context.
 - Startup no longer crashes when a saved queue selects the first package before commands are initialized.
 - FuckingFast resolver updated for the new site layout: the DOWNLOAD button now issues an htmx `POST /f/{id}/go` and the direct URL is returned in the `HX-Redirect` response header. The HTTP resolver speaks this protocol directly, and the hidden WebView2 fallback performs the same POST from inside the page (bypassing the Cloudflare TLS-fingerprint challenge that blocks plain HttpClient) instead of clicking the old `<button>` element that no longer exists.
+- The app no longer hangs on close: a lingering non-background thread from a third-party library (WebView2/MonoTorrent) could keep the process alive after all windows closed; state is now saved synchronously and the process exits immediately afterward.
+- Fixed a text-overflow/collision bug in the overview panel's "Supported hosts" row, and translated the last remaining Portuguese UI strings to English for consistency with the rest of the interface.
 
 ## 1.0.0 - 2026-06-27
 
