@@ -86,25 +86,25 @@ public sealed class PackageViewModel : ObservableObject
         {
             if (Items.Any(item => item.Status == DownloadStatus.Downloading))
             {
-                return "Baixando";
+                return "Downloading";
             }
 
             if (Items.Any(item => item.Status == DownloadStatus.Failed))
             {
-                return "Erro";
+                return "Error";
             }
 
             if (Items.All(item => item.Status is DownloadStatus.Completed or DownloadStatus.Extracted))
             {
-                return AutoExtract ? "Concluido / extraido" : "Concluido";
+                return AutoExtract ? "Completed / extracted" : "Completed";
             }
 
             if (Items.Any(item => item.Status == DownloadStatus.Resolving))
             {
-                return "Resolvendo";
+                return "Resolving";
             }
 
-            return "Na fila";
+            return "Queued";
         }
     }
 

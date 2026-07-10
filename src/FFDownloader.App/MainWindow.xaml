@@ -523,7 +523,7 @@
                             <DockPanel>
                                 <StackPanel>
                                     <TextBlock Text="LinkGrabber" Style="{StaticResource SectionTitleText}" />
-                                    <TextBlock Text="Paste links or let clipboard monitoring collect FuckingFast URLs." Style="{StaticResource MutedText}" />
+                                    <TextBlock Text="Paste links or let clipboard monitoring collect FuckingFast/Datanodes/MediaFire URLs." Style="{StaticResource MutedText}" />
                                 </StackPanel>
                                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                                     <Button Content="Add New Links" Command="{Binding AddLinksCommand}" Style="{StaticResource PrimaryButton}" />
@@ -562,6 +562,79 @@
                     </Grid>
                 </TabItem>
 
+                <TabItem Header="Torrents">
+                    <Grid Margin="0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Border Grid.Row="0" Style="{StaticResource CardBorder}" Margin="0,0,0,8">
+                            <DockPanel>
+                                <StackPanel>
+                                    <TextBlock Text="Torrents" Style="{StaticResource SectionTitleText}" />
+                                    <TextBlock Text="{Binding Torrents.StatusMessage}" Style="{StaticResource MutedText}" />
+                                </StackPanel>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                    <Button Content="Add Magnet" Command="{Binding Torrents.AddMagnetCommand}" Style="{StaticResource PrimaryButton}" />
+                                    <Button Content="Add .torrent File" Command="{Binding Torrents.AddTorrentFileCommand}" Style="{StaticResource PrimaryButton}" />
+                                    <Button Content="Start" Command="{Binding Torrents.StartCommand}" Style="{StaticResource GhostButton}" />
+                                    <Button Content="Pause" Command="{Binding Torrents.PauseCommand}" Style="{StaticResource GhostButton}" />
+                                    <Button Content="Remove" Command="{Binding Torrents.RemoveCommand}" Style="{StaticResource DangerButton}" />
+                                    <Button Content="Open Folder" Command="{Binding Torrents.OpenFolderCommand}" Style="{StaticResource GhostButton}" />
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
+                        <Border Grid.Row="1" Style="{StaticResource CardBorder}" Padding="0">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <DockPanel Grid.Row="0" Background="{StaticResource HeaderBrush}" Height="34">
+                                    <TextBlock Text="Active Torrents"
+                                               Style="{StaticResource SectionTitleText}"
+                                               VerticalAlignment="Center"
+                                               Margin="10,0" />
+                                </DockPanel>
+
+                                <DataGrid Grid.Row="1"
+                                          ItemsSource="{Binding Torrents.Torrents}"
+                                          SelectedItem="{Binding Torrents.SelectedTorrent, Mode=TwoWay}"
+                                          IsReadOnly="True"
+                                          AlternationCount="2">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" ElementStyle="{StaticResource CellTextBlock}" />
+                                        <DataGridTextColumn Header="Status" Binding="{Binding StatusText}" Width="120" ElementStyle="{StaticResource CellTextBlock}" />
+                                        <DataGridTemplateColumn Header="Progress" Width="150">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="8,0">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="42" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <ProgressBar Minimum="0" Maximum="100" Value="{Binding ProgressPercent, Mode=OneWay}" VerticalAlignment="Center" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding ProgressPercent, StringFormat={}{0:0}%}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <DataGridTextColumn Header="Size" Binding="{Binding SizeText}" Width="90" ElementStyle="{StaticResource CellMutedTextBlock}" />
+                                        <DataGridTextColumn Header="Downloaded" Binding="{Binding DownloadedText}" Width="90" ElementStyle="{StaticResource CellMutedTextBlock}" />
+                                        <DataGridTextColumn Header="DL Speed" Binding="{Binding DownloadSpeedText}" Width="95" ElementStyle="{StaticResource CellMutedTextBlock}" />
+                                        <DataGridTextColumn Header="UL Speed" Binding="{Binding UploadSpeedText}" Width="95" ElementStyle="{StaticResource CellMutedTextBlock}" />
+                                        <DataGridTextColumn Header="Seeds" Binding="{Binding Seeds}" Width="60" ElementStyle="{StaticResource CellMutedTextBlock}" />
+                                        <DataGridTextColumn Header="Peers" Binding="{Binding Peers}" Width="60" ElementStyle="{StaticResource CellMutedTextBlock}" />
+                                        <DataGridTextColumn Header="Error" Binding="{Binding ErrorMessage}" Width="160" ElementStyle="{StaticResource CellMutedTextBlock}" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </TabItem>
+
                 <TabItem Header="Settings">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <Grid Margin="10">
@@ -570,6 +643,7 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
@@ -622,6 +696,60 @@
                                     <CheckBox Content="Start automatically after adding links" IsChecked="{Binding AutoStart}" />
                                     <CheckBox Content="Extract automatically" IsChecked="{Binding AutoExtract}" />
                                     <Button Content="Save Settings" Command="{Binding SaveSettingsCommand}" Style="{StaticResource PrimaryButton}" Margin="0,14,0,0" HorizontalAlignment="Left" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Grid.Row="2" Grid.Column="0" Style="{StaticResource CardBorder}" Margin="0,0,10,10">
+                                <StackPanel>
+                                    <TextBlock Text="Torrent Network" Style="{StaticResource SectionTitleText}" />
+                                    <TextBlock Text="Listen port" Style="{StaticResource SectionCaptionText}" Margin="0,10,0,4" />
+                                    <TextBox Text="{Binding Torrents.ListenPort, UpdateSourceTrigger=PropertyChanged}" />
+                                    <CheckBox Content="Enable DHT" IsChecked="{Binding Torrents.EnableDht}" />
+                                    <CheckBox Content="Enable Peer Exchange (PEX)" IsChecked="{Binding Torrents.EnablePeerExchange}" />
+                                    <CheckBox Content="Enable Local Peer Discovery (LSD)" IsChecked="{Binding Torrents.EnableLocalPeerDiscovery}" />
+                                    <CheckBox Content="Enable UPnP / NAT-PMP port forwarding" IsChecked="{Binding Torrents.EnablePortForwarding}" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Grid.Row="2" Grid.Column="1" Style="{StaticResource CardBorder}" Margin="0,0,0,10">
+                                <StackPanel>
+                                    <TextBlock Text="Torrent Speed &amp; Seeding" Style="{StaticResource SectionTitleText}" />
+                                    <Grid Margin="0,10,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="12" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="Max download KB/s (0 = unlimited)" Style="{StaticResource SectionCaptionText}" Margin="0,0,0,4" />
+                                            <TextBox Text="{Binding Torrents.MaxDownloadSpeedKilobytesPerSecond, UpdateSourceTrigger=PropertyChanged}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="Max upload KB/s (0 = unlimited)" Style="{StaticResource SectionCaptionText}" Margin="0,0,0,4" />
+                                            <TextBox Text="{Binding Torrents.MaxUploadSpeedKilobytesPerSecond, UpdateSourceTrigger=PropertyChanged}" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <TextBlock Text="Default download folder" Style="{StaticResource SectionCaptionText}" Margin="0,12,0,4" />
+                                    <DockPanel>
+                                        <TextBox Text="{Binding Torrents.DownloadFolder, UpdateSourceTrigger=PropertyChanged}" MinWidth="360" />
+                                    </DockPanel>
+                                    <CheckBox Content="Stop seeding when ratio/time limit is reached" IsChecked="{Binding Torrents.StopSeedingAtLimit}" Margin="0,12,0,0" />
+                                    <Grid Margin="0,8,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="12" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="Seed ratio limit (0 = unlimited)" Style="{StaticResource SectionCaptionText}" Margin="0,0,0,4" />
+                                            <TextBox Text="{Binding Torrents.SeedRatioLimit, UpdateSourceTrigger=PropertyChanged}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="Seed time limit, minutes (0 = unlimited)" Style="{StaticResource SectionCaptionText}" Margin="0,0,0,4" />
+                                            <TextBox Text="{Binding Torrents.SeedTimeLimitMinutes, UpdateSourceTrigger=PropertyChanged}" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <Button Content="Save Torrent Settings" Command="{Binding Torrents.SaveSettingsCommand}" Style="{StaticResource PrimaryButton}" Margin="0,14,0,0" HorizontalAlignment="Left" />
                                 </StackPanel>
                             </Border>
                         </Grid>
@@ -691,16 +819,11 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Text="Host: fuckingfast.co" />
-                                    <TextBlock Grid.Column="1" Text="{Binding TotalFiles}" />
-                                </Grid>
-                                <Grid Margin="0,6,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="Unknown status" />
-                                    <TextBlock Grid.Column="1" Text="0" />
+                                    <TextBlock Text="Supported hosts" />
+                                    <TextBlock Grid.Column="1"
+                                               Text="35"
+                                               FontWeight="SemiBold"
+                                               ToolTip="fuckingfast.co, datanodes.to, mediafire.com, multiup.io/.org, and 31 mirror hosts (gofile.io, krakenfiles.com, megaup.net, ranoz.gg, mixdrop.ag, 1fichier.com, rapidgator.net, nitroflare.com, turbobit.net and more)" />
                                 </Grid>
                             </StackPanel>
                         </Border>
