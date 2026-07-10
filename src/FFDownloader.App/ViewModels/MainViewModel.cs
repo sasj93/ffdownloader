@@ -705,7 +705,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             AppLogger.Error(ex, $"Download item failed: {item.FileName}");
             item.Status = DownloadStatus.Failed;
             item.ErrorMessage = ex.Message;
-            StatusMessage = $"Erro em {item.FileName}: {ex.Message}";
+            StatusMessage = $"Error in {item.FileName}: {ex.Message}";
             RefreshDashboard();
             SaveQueueState();
         }

@@ -61,7 +61,7 @@ dotnet build src\FFDownloader.App\FFDownloader.App.csproj -c Release
 Publish the portable executable:
 
 ```powershell
-.\scripts\package-release.ps1 -Version 1.0.0
+.\scripts\package-release.ps1 -Version 1.1.0
 ```
 
 The release ZIP is written to `artifacts\release\`.
